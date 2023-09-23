@@ -10,9 +10,9 @@
 #include <math.h>
 #include <sys/time.h>
 
-#define BOX_SIZE 23000 /* size of the data box on one dimension */
+#define BOX_SIZE 23000 // size of the data box on one dimension 
 
-/* definition of single atom */
+// definition of single atom 
 typedef struct atomdesc
 {
   double x_pos;
@@ -20,61 +20,54 @@ typedef struct atomdesc
   double z_pos;
 } atom;
 
-/* definition of a bucket */
+// definition of a bucket 
 typedef struct hist_entry
 {
-  long long d_cnt; /* need a long long type as the count might be huge */
+  unsigned long long distance_count; // need a long long type as the count might be huge
 } bucket;
 
-bucket *histogram;  /* list of all buckets in the histogram   */
-long long PDH_acnt; /* total number of data points            */
-int num_buckets;    /* total number of buckets in the histogram */
-double PDH_res;     /* value of w                             */
-atom *atom_list;    /* list of all data points                */
+bucket *histogram;        // list of all buckets in the histogram   
+long long PDH_atom_count; // total number of data points            
+int num_buckets;          // total number of buckets in the histogram 
+double PDH_bucket_width;  // value of w                             
+atom *atom_list;          // list of all data points                
 
-/* These are for an old way of tracking time */
+// These are for an old way of tracking time 
 struct timezone Idunno;
 struct timeval startTime, endTime;
 
-/*
-  distance of two points in the atom_list
-*/
-double p2p_distance(int ind1, int ind2)
+// distance of two points in the atom_list
+__device__ double p2p_distance(int index1, int index2)
 {
-
-  double x1 = atom_list[ind1].x_pos;
-  double x2 = atom_list[ind2].x_pos;
-  double y1 = atom_list[ind1].y_pos;
-  double y2 = atom_list[ind2].y_pos;
-  double z1 = atom_list[ind1].z_pos;
-  double z2 = atom_list[ind2].z_pos;
+  double x1 = atom_list[index1].x_pos;
+  double x2 = atom_list[index2].x_pos;
+  double y1 = atom_list[index1].y_pos;
+  double y2 = atom_list[index2].y_pos;
+  double z1 = atom_list[index1].z_pos;
+  double z2 = atom_list[index2].z_pos;
 
   return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2));
 }
 
-/*
-  brute-force SDH solution in a single CPU thread
-*/
+// brute-force SDH solution in a single CPU thread
 int PDH_baseline()
 {
   int i, j, h_pos;
   double dist;
 
-  for (i = 0; i < PDH_acnt; i++)
+  for (i = 0; i < PDH_atom_count; i++)
   {
-    for (j = i + 1; j < PDH_acnt; j++)
+    for (j = i + 1; j < PDH_atom_count; j++)
     {
       dist = p2p_distance(i, j);
-      h_pos = (int)(dist / PDH_res);
-      histogram[h_pos].d_cnt++;
+      h_pos = (int)(dist / PDH_bucket_width);
+      histogram[h_pos].distance_count++;
     }
   }
   return 0;
 }
 
-/*
-  set a checkpoint and show the (natural) running time in seconds
-*/
+// set a checkpoint and show the (natural) running time in seconds
 double report_running_time()
 {
   long sec_diff, usec_diff;
@@ -90,22 +83,21 @@ double report_running_time()
   return (double)(sec_diff * 1.0 + usec_diff / 1000000.0);
 }
 
-/*
-  print the counts in all buckets of the histogram
-*/
+// print the counts in all buckets of the histogram
 void output_histogram()
 {
   int i;
-  long long total_cnt = 0;
+  long long total_count = 0;
   for (i = 0; i < num_buckets; i++)
   {
-    if (i % 5 == 0) /* we print 5 buckets in a row */
+    if (i % 5 == 0) // print 5 buckets in a row 
       printf("\n%02d: ", i);
-    printf("%15lld ", histogram[i].d_cnt);
-    total_cnt += histogram[i].d_cnt;
-    /* we also want to make sure the total distance count is correct */
+    printf("%15lld ", histogram[i].distance_count);
+    total_count += histogram[i].distance_count;
+
+    // we also want to make sure the total distance count is correct 
     if (i == num_buckets - 1)
-      printf("\n T:%lld \n", total_cnt);
+      printf("\n T:%lld \n", total_count);
     else
       printf("| ");
   }
@@ -115,33 +107,33 @@ int main(int argc, char **argv)
 {
   int i;
 
-  PDH_acnt = atoi(argv[1]);
-  PDH_res = atof(argv[2]);
-  // printf("args are %d and %f\n", PDH_acnt, PDH_res);
+  PDH_atom_count = atoi(argv[1]);
+  PDH_bucket_width = atof(argv[2]);
 
-  num_buckets = (int)(BOX_SIZE * 1.732 / PDH_res) + 1;
+  num_buckets = (int)(BOX_SIZE * 1.732 / PDH_bucket_width) + 1; // number of buckets needed for SDH
   histogram = (bucket *)malloc(sizeof(bucket) * num_buckets);
 
-  atom_list = (atom *)malloc(sizeof(atom) * PDH_acnt);
+  atom_list = (atom *)malloc(sizeof(atom) * PDH_atom_count);
 
   srand(1);
-  /* generate data following a uniform distribution */
-  for (i = 0; i < PDH_acnt; i++)
+  // generate data following a uniform distribution 
+  for (i = 0; i < PDH_atom_count; i++)
   {
     atom_list[i].x_pos = ((double)(rand()) / RAND_MAX) * BOX_SIZE;
     atom_list[i].y_pos = ((double)(rand()) / RAND_MAX) * BOX_SIZE;
     atom_list[i].z_pos = ((double)(rand()) / RAND_MAX) * BOX_SIZE;
   }
-  /* start counting time */
+
+  // start counting time 
   gettimeofday(&startTime, &Idunno);
 
-  /* call CPU single thread version to compute the histogram */
+  // call CPU single thread version to compute the histogram 
   PDH_baseline();
 
-  /* check the total running time */
+  // check the total running time 
   report_running_time();
 
-  /* print out the histogram */
+  // print out the histogram 
   output_histogram();
 
   return 0;
